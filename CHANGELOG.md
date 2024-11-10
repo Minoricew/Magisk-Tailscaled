@@ -10,3 +10,5 @@ No need update if you're not use coredns.## v1.72.1.0
 - Update Tailscale binaries to v1.76.0
 ## v1.76.1.0
 - Update Tailscale binaries to v1.76.1
+## v1.76.6.0
+- Update Tailscale binaries to v1.76.6
