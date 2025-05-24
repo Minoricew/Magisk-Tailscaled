@@ -13,6 +13,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+    - name: Get latest stable release from tailscale
+      id: get_stable_release
+      uses: octokit/request-action@v2.x
+      with:
+        route: GET /repos/tailscale/tailscale/releases/latest
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
     - name: Get latest tag
       run: |
         latestTag="${{ fromJSON(steps.get_stable_release.outputs.data).tag_name }}"
@@ -45,14 +53,19 @@ jobs:
 
     - name: Download latest Tailscale source code
       run: |
+        sudo apt install unzip -y
         mkdir -p build
         cd build
         latestTarballurl=https://github.com/tailscale/tailscale/archive/refs/heads/main.zip
         mkdir -p tailscale
-        curl -L $latestTarballurl -o tailscale.tar.gz
-        tar -xzf tailscale.tar.gz -C tailscale --strip-components=1
+        curl -L $latestTarballurl -o tailscale.zip
+        unzip tailscale.zip -d .
+        mv ./tailscale-main ./tailscale
         ls -la tailscale
-        rm tailscale.tar.gz
+        echo Moving files...
+        mv tailscale/tailscale-main/* tailscale/tailscale-main/.* tailscale/ -f
+        ls -la tailscale
+        rm tailscale.zip
         cd ..
 
     - name: Build Tailscale for Android
