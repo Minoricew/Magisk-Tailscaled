@@ -10,26 +10,80 @@ on:
         description: 'Force update'
         required: false
         default: false
+      manual_version:
+        type: string
+        description: 'Manual version (e.g., v1.58.2) - must be used with manual_download_url'
+        required: false
+        default: ''
+      manual_download_url:
+        type: string
+        description: 'Manual download URL base (e.g., https://pkgs.tailscale.com/stable/) - must be used with manual_version'
+        required: false
+        default: ''
+
 permissions:
   contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Validate manual inputs
+        id: validate_inputs
+        run: |
+          MANUAL_VERSION="${{ github.event.inputs.manual_version }}"
+          MANUAL_URL="${{ github.event.inputs.manual_download_url }}"
+          
+          if [[ -n "$MANUAL_VERSION" && -z "$MANUAL_URL" ]] || [[ -z "$MANUAL_VERSION" && -n "$MANUAL_URL" ]]; then
+            echo "Error: Both manual_version and manual_download_url must be provided together, or both must be empty"
+            exit 1
+          fi
+          
+          if [[ -n "$MANUAL_VERSION" && -n "$MANUAL_URL" ]]; then
+            echo "use_manual=true" >> $GITHUB_OUTPUT
+            echo "Using manual inputs: Version=$MANUAL_VERSION, URL=$MANUAL_URL"
+          else
+            echo "use_manual=false" >> $GITHUB_OUTPUT
+            echo "Using automatic detection from GitHub releases"
+          fi
+
       - name: Get latest release from tailscale
         id: get_latest_release
+        if: steps.validate_inputs.outputs.use_manual != 'true'
         uses: octokit/request-action@v2.x
         with:
           route: GET /repos/tailscale/tailscale/releases/latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set version variables
+        id: set_version
+        run: |
+          if [[ "${{ steps.validate_inputs.outputs.use_manual }}" == "true" ]]; then
+            NEW_TAG="${{ github.event.inputs.manual_version }}"
+            VERSION="${{ github.event.inputs.manual_version }}"
+            DOWNLOAD_URL="${{ github.event.inputs.manual_download_url }}"
+            echo "Using manual inputs"
+          else
+            NEW_TAG="${{ fromJSON(steps.get_latest_release.outputs.data).tag_name }}"
+            VERSION="${{ fromJSON(steps.get_latest_release.outputs.data).name }}"
+            DOWNLOAD_URL="https://pkgs.tailscale.com/stable/"
+            echo "Using automatic detection"
+          fi
+          
+          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "download_url=$DOWNLOAD_URL" >> $GITHUB_OUTPUT
+          
+          echo "Set variables: NEW_TAG=$NEW_TAG, VERSION=$VERSION, DOWNLOAD_URL=$DOWNLOAD_URL"
+
       - name: Check current version is up to date
         id: check_version
         run: |
-          NEW_TAG="${{ fromJSON(steps.get_latest_release.outputs.data).tag_name }}" 
-          VERSION="${{ fromJSON(steps.get_latest_release.outputs.data).name }}"
+          NEW_TAG="${{ steps.set_version.outputs.new_tag }}"
+          VERSION="${{ steps.set_version.outputs.version }}"
           CURRENT_TAG=$(curl -s https://raw.githubusercontent.com/anasfanani/Magisk-Tailscaled/master/files/VERSION.txt)
+          
           if [[ "$NEW_TAG" == "$CURRENT_TAG" && "${{ github.event.inputs.force }}" != 'true' ]]; then
             echo "Current version is up to date"
             echo "exit=true" >> $GITHUB_OUTPUT
@@ -40,6 +94,7 @@ jobs:
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
             echo "current_tag=$CURRENT_TAG" >> $GITHUB_OUTPUT
+            echo "download_url=${{ steps.set_version.outputs.download_url }}" >> $GITHUB_OUTPUT
           fi
         shell: bash
 
@@ -52,12 +107,21 @@ jobs:
         run: |
           PREFIX=${{ steps.check_version.outputs.version }}
           PREFIX=${PREFIX#v}
+          DOWNLOAD_URL="${{ steps.check_version.outputs.download_url }}"
           ARCHS=("arm" "arm64")
           mkdir -p files
           cd files
+          
           for ARCH in ${ARCHS[@]}; do
-            URL="https://pkgs.tailscale.com/stable/tailscale_${PREFIX}_${ARCH}.tgz"
-            curl -LO $URL
+            
+            if [[ "$DOWNLOAD_URL" != */ ]]; then
+              DOWNLOAD_URL="${DOWNLOAD_URL}/"
+            fi
+            
+            URL="${DOWNLOAD_URL}tailscale_${PREFIX}_${ARCH}.tgz"
+            echo "Downloading from: $URL"
+            
+            curl -LO "$URL"
             tar -xzf "tailscale_${PREFIX}_${ARCH}.tgz" "tailscale_${PREFIX}_${ARCH}/tailscaled" "tailscale_${PREFIX}_${ARCH}/tailscale"
             mv "tailscale_${PREFIX}_${ARCH}/tailscaled" "tailscaled-${ARCH}"
             mv "tailscale_${PREFIX}_${ARCH}/tailscale" "tailscale-${ARCH}"
@@ -71,6 +135,7 @@ jobs:
         if: steps.check_version.outputs.exit != 'true'
         run: |
           echo ${{ steps.check_version.outputs.new_tag }} > files/VERSION.txt
+          
       - name: Update update.json and module.prop
         if: steps.check_version.outputs.exit != 'true'
         run: |
@@ -148,10 +213,10 @@ jobs:
             Magisk-Tailscaled-arm-${{ steps.check_version.outputs.new_tag }}.0.zip
           name: Magisk Tailscaled ${{ steps.check_version.outputs.new_tag }}.0
           tag_name: ${{ steps.check_version.outputs.new_tag }}.0
+          
       - name: Show output
         run: |
           echo "URL: ${{ steps.create_release.outputs.url }}"
           echo "ID: ${{ steps.create_release.outputs.id }}"
           echo "Upload URL: ${{ steps.create_release.outputs.upload_url }}"
           echo "Assets: ${{ steps.create_release.outputs.assets }}"
-      
