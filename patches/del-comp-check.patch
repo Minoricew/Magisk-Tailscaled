@@ -1,0 +1,34 @@
+From afa0721e964f93b6b2cac2b86f4a43e0400cdf16 Mon Sep 17 00:00:00 2001
+From: Minorice <154642983+Minoricew@users.noreply.github.com>
+Date: Thu, 3 Jul 2025 12:07:32 +0000
+Subject: [PATCH] [?] Remove eq check in Set()
+
+---
+ tsd/tsd.go | 11 -----------
+ 1 file changed, 11 deletions(-)
+
+diff --git a/tsd/tsd.go b/tsd/tsd.go
+index ccd804f81..03639779c 100644
+--- a/tsd/tsd.go
++++ b/tsd/tsd.go
+@@ -182,17 +182,6 @@ type SubSystem[T any] struct {
+ // Set must not be called concurrently with other Sets or Gets.
+ func (p *SubSystem[T]) Set(v T) {
+ 	if p.set {
+-		var oldVal any = p.v
+-		var newVal any = v
+-		if oldVal == newVal {
+-			// Allow setting to the same value.
+-			// Note we had to box them through "any" to force them to be comparable.
+-			// We can't set the type constraint T to be "comparable" because the interfaces
+-			// aren't comparable. (See https://github.com/golang/go/issues/52531 and
+-			// https://github.com/golang/go/issues/52614 for some background)
+-			return
+-		}
+-
+ 		var z *T
+ 		panic(fmt.Sprintf("%v is already set", reflect.TypeOf(z).Elem().String()))
+ 	}
+-- 
+2.49.0
+
