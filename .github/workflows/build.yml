@@ -43,7 +43,7 @@ jobs:
       id: setup-ndk
       uses: nttld/setup-ndk@v1
       with:
-        ndk-version: r26d
+        ndk-version: r27c
         add-to-path: false
 
     - name: Display NDK path
@@ -57,12 +57,8 @@ jobs:
       run: |
         mkdir -p build
         cd build
-        latestTarballurl="${{ fromJSON(steps.get_stable_release.outputs.data).tarball_url }}"
-        mkdir -p tailscale
-        curl -L $latestTarballurl -o tailscale.tar.gz
-        tar -xzf tailscale.tar.gz -C tailscale --strip-components=1
+        git clone https://github.com/tailscale/tailscale.git
         ls -la tailscale
-        rm tailscale.tar.gz
         cd ..
 
     - name: Build Tailscale for Android
